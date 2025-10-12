@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sys/stat.h>
+#include <ctime>
 
 void printUsage(const char *progName) {
     std::cout << "LLVM Code Obfuscator - CLI Tool\n";
@@ -161,10 +162,10 @@ int main(int argc, char *argv[]) {
     
     // Write report
     std::ofstream report(reportFile);
-    auto t = std::time(nullptr);
-    auto tm = *std::localtime(&t);
+    auto t = time(nullptr);
+    auto tm = *localtime(&t);
     char timeStr[100];
-    std::strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &tm);
+    strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &tm);
     
     long inputSize = getFileSize(inputFile);
     long outputSize = getFileSize(platform == "windows" ? outputFile + ".exe" : outputFile);
