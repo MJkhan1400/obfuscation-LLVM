@@ -1,0 +1,52 @@
+# === C++ / LLVM Project .gitignore ===
+
+# --- Build directories ---
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+compile_commands.json
+
+# --- Custom build folder ---
+obfuscator_pass/build/
+
+# --- Object and binary files ---
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.out
+*.exe
+
+# --- LLVM / IR files ---
+*.ll
+*.bc
+
+# --- Debug files ---
+*.log
+*.dSYM/
+*.pch
+*.pdb
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*.user
+*.workspace
+*.code-workspace
+
+# --- OS generated files ---
+.DS_Store
+Thumbs.db
+
+# --- Misc ---
+*.tmp
+*.bak
+*.old
+
