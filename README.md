@@ -2,7 +2,7 @@
 
 A powerful LLVM-based code obfuscation tool for C/C++ programs that generates hardened binaries for Linux and Windows platforms with detailed reporting.
 
-## 📋 Overview
+## Overview
 
 This tool leverages LLVM's compiler infrastructure to apply multiple obfuscation techniques to C/C++ code, making reverse engineering significantly more difficult while maintaining functional correctness.
 
@@ -24,7 +24,7 @@ This tool leverages LLVM's compiler infrastructure to apply multiple obfuscation
   - Obfuscation statistics
   - Code size impact analysis
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 ollvm/
@@ -37,7 +37,7 @@ ollvm/
 └── obfuscate.cpp                    # CLI tool source
 ```
 
-## 🔧 Prerequisites
+## Prerequisites
 
 ### Required Software
 
@@ -54,7 +54,7 @@ sudo pacman -S llvm clang cmake
 sudo pacman -S mingw-w64-gcc
 ```
 
-## 🚀 Building the Project
+## Building the Project
 
 ### Step 1: Build the LLVM Pass
 
@@ -84,7 +84,7 @@ cd ~/ollvm
 clang++ -o obfuscate obfuscate.cpp -std=c++17
 ```
 
-## 📖 Usage
+## Usage
 
 ### Basic Usage
 
@@ -131,7 +131,7 @@ Options:
 ./obfuscate main.cpp -l high
 ```
 
-## 🔬 Manual Testing (Using LLVM Tools Directly)
+## Manual Testing (Using LLVM Tools Directly)
 
 For development and debugging:
 
@@ -152,7 +152,7 @@ cat main_obf.ll
 clang++ main_obf.bc -o hello_obfuscated
 ```
 
-## 📊 Report Format
+## Report Format
 
 The generated report includes:
 
@@ -205,7 +205,7 @@ Obfuscation completed successfully!
 ========================================
 ```
 
-## 🛡️ Obfuscation Techniques Explained
+## Obfuscation Techniques Explained
 
 ### 1. **Bogus Code Injection**
 Inserts unreachable code blocks with fake computations that appear legitimate but never execute.
@@ -256,32 +256,7 @@ int sum = a - (-b);  // Equivalent but more complex
 ### 4. **Control Flow Obfuscation**
 Adds conditional branches that make the control flow graph more complex.
 
-## 🎯 Assignment Requirements Checklist
-
-### ✅ Core Requirements
-
-- [x] **LLVM-based obfuscation** - Uses LLVM pass infrastructure
-- [x] **C/C++ support** - Compiles C and C++ code
-- [x] **Linux binaries** - Native Linux executable generation
-- [x] **Windows binaries** - Cross-compilation support via MinGW
-- [x] **Configurable parameters** - CLI options for customization
-- [x] **Difficult to reverse** - Multiple obfuscation layers
-
-### ✅ Report Requirements
-
-- [x] **a. Input parameters logged** - All CLI options recorded
-- [x] **b. Output file attributes** - Size, methods, platform
-- [x] **c. Bogus code information** - Count and size impact
-- [x] **d. Obfuscation cycles** - Number of passes completed
-- [x] **e. String obfuscation count** - Encrypted strings tracked
-- [x] **f. Fake loops count** - Inserted fake loops logged
-
-### ✅ Deliverables
-
-- [x] **Obfuscated executable** - Binary file generated
-- [x] **Detailed report** - Text file with all metrics
-
-## 🔍 Understanding LLVM IR
+## Understanding LLVM IR
 
 LLVM IR (Intermediate Representation) is the key to this obfuscation process.
 
@@ -313,7 +288,7 @@ Example IR for `int x = 5;`:
 store i32 5, ptr %1, align 4
 ```
 
-## 🧪 Testing and Verification
+## Testing and Verification
 
 ### Test 1: Basic Functionality
 
@@ -372,7 +347,7 @@ ls -lh test_obf
 # Obfuscated should be larger due to bogus code
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Issue: "cannot find -lLLVMCore"
 
@@ -422,7 +397,7 @@ sudo pacman -S mingw-w64-gcc
 
 Or compile on Linux only (skip --windows flag).
 
-## 📚 Technical Details
+## Technical Details
 
 ### LLVM Pass Types
 
@@ -451,7 +426,7 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
 
 LLVM's optimization passes can be used in reverse to add complexity!
 
-## 🚀 Future Enhancements
+## Future Enhancements
 
 Potential improvements for the project:
 
@@ -464,14 +439,14 @@ Potential improvements for the project:
 7. **Multiple Pass Cycles**: Apply obfuscation repeatedly
 8. **Configurable Intensity**: Fine-tune each technique independently
 
-## 📖 References
+## References
 
 - [LLVM Documentation](https://llvm.org/docs/)
 - [Writing an LLVM Pass](https://llvm.org/docs/WritingAnLLVMPass.html)
 - [LLVM IR Language Reference](https://llvm.org/docs/LangRef.html)
 - [Code Obfuscation Techniques](https://en.wikipedia.org/wiki/Obfuscation_(software))
 
-## 👨‍💻 Development Notes
+## Development Notes
 
 ### Building with Debug Info
 
@@ -496,16 +471,10 @@ rm -rf obfuscator_pass/build/*
 rm -f *.bc *.ll obfuscate
 ```
 
-## 📝 License
-
-This project is created for educational purposes as part of an academic assignment on software obfuscation using LLVM.
-
-## ✨ Summary
+## Summary
 
 This LLVM-based obfuscator provides:
 - **Protection**: Multiple layers of code obfuscation
 - **Transparency**: Detailed reporting of all transformations
 - **Flexibility**: Configurable parameters and cross-platform support
 - **Correctness**: Maintains program functionality while adding complexity
-
-The tool successfully demonstrates practical application of LLVM's compiler infrastructure for software protection purposes.
