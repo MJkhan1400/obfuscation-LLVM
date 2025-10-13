@@ -7,6 +7,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Support/Casting.h"
 #include <random>
 #include <fstream>
 #include <chrono>
@@ -238,15 +239,22 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
         // Add bogus blocks (limit to avoid too much bloat)
         int bogusToAdd = std::min(2, (int)blocks.size());
         for (int i = 0; i < bogusToAdd && i < blocks.size(); i++) {
-            obf.addBogusBlock(F, blocks[i]);
-            modified = true;
+            // CRITICAL FIX: Do not modify blocks that end in a return statement.
+            // This was the source of the infinite loop and crash.
+            if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
+                obf.addBogusBlock(F, blocks[i]);
+                modified = true;
+            }
         }
         
         // Add fake loops
         int loopsToAdd = std::min(1, (int)blocks.size() / 2);
         for (int i = 0; i < loopsToAdd && i < blocks.size(); i++) {
-            obf.addFakeLoop(F, blocks[i]);
-            modified = true;
+            // CRITICAL FIX: Also protect fake loop insertion from breaking return blocks.
+            if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
+                obf.addFakeLoop(F, blocks[i]);
+                modified = true;
+            }
         }
         
         // Substitute instructions
