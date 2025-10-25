@@ -54,6 +54,14 @@ sudo pacman -S llvm clang cmake
 sudo pacman -S mingw-w64-gcc
 ```
 
+### Installation for Debian
+
+```bash
+sudo apt install llvm clang cmake
+# For Windows cross-compilation:
+sudo apt install mingw-w64-gcc
+```
+
 ## Building the Project
 
 ### Step 1: Build the LLVM Pass
