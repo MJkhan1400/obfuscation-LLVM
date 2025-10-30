@@ -1,7 +1,7 @@
 # === C++ / LLVM Project .gitignore ===
 
 # --- Build directories ---
-build/
+obfuscator_pass/build/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
