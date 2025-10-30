@@ -1,12 +1,15 @@
 # === C++ / LLVM Project .gitignore ===
 
 # --- Build directories ---
+build/
 obfuscator_pass/build/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
 Makefile
 compile_commands.json
+./main.cpp
+./obfuscate
 
 # --- Custom build folder ---
 obfuscator_pass/build/

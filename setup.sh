@@ -3,6 +3,8 @@
 
 set -e  # Exit on error
 
+mkdir -p build
+
 echo "========================================="
 echo "LLVM Code Obfuscator - Setup Script"
 echo "========================================="
@@ -42,7 +44,7 @@ if [ ! -f "build/ObfuscatorPass.so" ]; then
     exit 1
 fi
 
-echo "      ✓ Built: build/ObfuscatorPass.so ($(du -h build/ObfuscatorPass.so | cut -f1))"
+echo "      ✓ Built: obfuscator_pass/build/ObfuscatorPass.so ($(du -h build/ObfuscatorPass.so | cut -f1))"
 
 # Verify the plugin symbol
 if nm -D build/ObfuscatorPass.so | grep -q "llvmGetPassPluginInfo"; then
@@ -83,25 +85,22 @@ EOF
     echo "      ✓ Created test file: main.cpp"
 fi
 
-# Compile to LLVM IR
-clang++ -emit-llvm -c main.cpp -o main.bc 2>/dev/null
-echo "      ✓ Compiled to LLVM IR: main.bc"
-
-# Test the pass
-opt -load-pass-plugin=./obfuscator_pass/build/ObfuscatorPass.so \
-    -passes="obfuscator-pass" \
-    main.bc -o main_obf.bc 2>&1 | grep -q "ObfuscatorPass"
+# Run the obfuscator
+./obfuscate main.cpp -o build/hello_obfuscated -f --emit-ll
 
 if [ $? -eq 0 ]; then
-    echo "      ✓ Obfuscation pass working!"
+    echo "      ✓ Obfuscation command working!"
 else
-    echo "      ✗ Warning: Obfuscation pass test failed"
+    echo "      ✗ Warning: Obfuscation command test failed"
 fi
 
-# Compile the obfuscated version
-clang++ main_obf.bc -o hello_obfuscated 2>/dev/null
-if [ -f "hello_obfuscated" ]; then
-    echo "      ✓ Generated test executable: hello_obfuscated"
+# Check for output files
+if [ -f "build/hello_obfuscated" ]; then
+    echo "      ✓ Generated test executable: build/hello_obfuscated"
+fi
+
+if [ -f "build/hello_obfuscated_obf.ll" ]; then
+    echo "      ✓ Generated human-readable IR: build/hello_obfuscated_obf.ll"
 fi
 
 echo ""
@@ -111,14 +110,14 @@ echo "========================================="
 echo ""
 echo "Usage:"
 echo "  ./obfuscate main.cpp              # Basic usage"
-echo "  ./obfuscate main.cpp -o output    # Custom output name"
+echo "  ./obfuscate main.cpp -o build/output    # Custom output name"
 echo "  ./obfuscate main.cpp --windows    # Windows binary"
 echo "  ./obfuscate --help                # Show all options"
 echo ""
 echo "Files created:"
 echo "  - obfuscator_pass/build/ObfuscatorPass.so  (LLVM pass)"
-echo "  - obfuscate                                 (CLI tool)"
-echo "  - hello_obfuscated                          (Test executable)"
+echo "  - obfuscate          (CLI tool)"
+echo "  - build/hello_obfuscated   (Test executable)"
 echo ""
-echo "Try running: ./hello_obfuscated"
+echo "Try running: ./build/hello_obfuscated"
 echo "========================================="
