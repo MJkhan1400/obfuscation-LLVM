@@ -4,6 +4,9 @@
 #include <fstream>
 #include <sys/stat.h>
 #include <ctime>
+#include <libgen.h> // For dirname()
+#include <cstdio> // For std::remove
+#include <cstring>
 
 void printUsage(const char *progName) {
     std::cout << "LLVM Code Obfuscator - CLI Tool\n";
@@ -15,6 +18,11 @@ void printUsage(const char *progName) {
     std::cout << "  -l <level>      Obfuscation level: low, medium, high (default: medium)\n";
     std::cout << "  --windows       Generate Windows executable (cross-compile)\n";
     std::cout << "  --linux         Generate Linux executable (default)\n";
+    std::cout << "  --emit-ll       Emit human-readable LLVM IR (.ll file)\n";
+    std::cout << "  --no-bogus-blocks Disable bogus block obfuscation\n";
+    std::cout << "  --no-fake-loops   Disable fake loop obfuscation\n";
+    std::cout << "  --no-instr-sub    Disable instruction substitution obfuscation\n";
+    std::cout << "  -f, --force       Force overwrite of existing output files\n";
     std::cout << "  -h, --help      Show this help message\n\n";
     std::cout << "Example:\n";
     std::cout << "  " << progName << " main.cpp -o obfuscated_main\n";
@@ -38,6 +46,11 @@ int main(int argc, char *argv[]) {
     std::string reportFile = "obfuscation_report.txt";
     std::string level = "medium";
     std::string platform = "linux";
+    bool emitLL = false;
+    bool enableBogusBlocks = true;
+    bool enableFakeLoops = true;
+    bool enableInstrSub = true;
+    bool forceOverwrite = false;
     
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -56,6 +69,16 @@ int main(int argc, char *argv[]) {
             platform = "windows";
         } else if (arg == "--linux") {
             platform = "linux";
+        } else if (arg == "--emit-ll") {
+            emitLL = true;
+        } else if (arg == "--no-bogus-blocks") {
+            enableBogusBlocks = false;
+        } else if (arg == "--no-fake-loops") {
+            enableFakeLoops = false;
+        } else if (arg == "--no-instr-sub") {
+            enableInstrSub = false;
+        } else if (arg == "-f" || arg == "--force") {
+            forceOverwrite = true;
         } else if (arg[0] != '-') {
             inputFile = arg;
         }
@@ -74,6 +97,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     test.close();
+
+    // Create a build directory in the same location as the input file
+    std::string buildDir = "build";
+    mkdir(buildDir.c_str(), 0755);
     
     // Set default output name
     if (outputFile.empty()) {
@@ -82,6 +109,19 @@ int main(int argc, char *argv[]) {
             outputFile = inputFile.substr(0, dotPos) + "_obfuscated";
         } else {
             outputFile = inputFile + "_obfuscated";
+        }
+    }
+
+    // Prepend build directory to output paths
+    outputFile = buildDir + "/" + outputFile.substr(outputFile.find_last_of('/') + 1);
+    reportFile = buildDir + "/" + reportFile;
+
+    // Check if output file exists
+    if (!forceOverwrite) {
+        std::ifstream checkExists(outputFile);
+        if (checkExists.good()) {
+            std::cerr << "Error: Output file '" << outputFile << "' already exists. Use -f to overwrite.\n";
+            return 1;
         }
     }
     
@@ -113,8 +153,13 @@ int main(int argc, char *argv[]) {
     // Get the directory where this binary is located
     std::string pluginPath = "obfuscator_pass/build/ObfuscatorPass.so";
     
+    std::string passes = "obfuscator-pass(bogus-blocks=" + std::string(enableBogusBlocks ? "true" : "false") + 
+                         ",fake-loops=" + std::string(enableFakeLoops ? "true" : "false") + 
+                         ",instr-sub=" + std::string(enableInstrSub ? "true" : "false") + 
+                         ",report-file=" + reportFile + ")";
+
     cmd = "opt -load-pass-plugin=./" + pluginPath + 
-          " -passes=\"obfuscator-pass\" " + 
+          " -passes='" + passes + "' " + 
           bcFile + " -o " + obfBcFile + " 2>&1";
     result = system(cmd.c_str());
     if (result != 0) {
@@ -124,8 +169,21 @@ int main(int argc, char *argv[]) {
     }
     std::cout << "      Generated: " << obfBcFile << "\n";
     
-    // Step 3: Generate executable
-    std::cout << "[3/5] Generating executable...\n";
+    // Step 3: Emit human-readable LLVM IR if requested
+    if (emitLL) {
+        std::cout << "[3/5] Emitting human-readable LLVM IR...\n";
+        std::string llFile = outputFile + "_obf.ll";
+        cmd = "llvm-dis " + obfBcFile + " -o " + llFile;
+        result = system(cmd.c_str());
+        if (result != 0) {
+            std::cerr << "Error: llvm-dis failed\n";
+        } else {
+            std::cout << "      Generated: " << llFile << "\n";
+        }
+    }
+
+    // Step 4: Generate executable
+    std::cout << "[4/5] Generating executable...\n";
     if (platform == "windows") {
         // Cross-compile for Windows
         std::cout << "      Attempting Windows cross-compilation...\n";
@@ -153,68 +211,22 @@ int main(int argc, char *argv[]) {
     std::string finalBinary = outputFile + (platform == "windows" ? ".exe" : "");
     if (result == 0) {
         std::cout << "      ✓ Generated: " << finalBinary << "\n";
-    } else {
+    }
+    else {
         std::cerr << "      ✗ Compilation had issues\n";
     }
     
-    // Step 4: Generate report
-    std::cout << "[4/5] Generating obfuscation report...\n";
+    // Step 5: Clean up intermediate files
+    std::cout << "[5/5] Cleaning up intermediate files...\n";
+    if (std::remove(bcFile.c_str()) != 0) {
+        std::cerr << "      Warning: Could not delete " << bcFile << "\n";
+    }
+    if (std::remove(obfBcFile.c_str()) != 0) {
+        std::cerr << "      Warning: Could not delete " << obfBcFile << "\n";
+    }
     
-    // Write report
-    std::ofstream report(reportFile);
-    auto t = time(nullptr);
-    auto tm = *localtime(&t);
-    char timeStr[100];
-    strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &tm);
-    
-    long inputSize = getFileSize(inputFile);
-    long outputSize = getFileSize(platform == "windows" ? outputFile + ".exe" : outputFile);
-    
-    report << "========================================\n";
-    report << "LLVM Obfuscation Report\n";
-    report << "========================================\n";
-    report << "Generation Time: " << timeStr << "\n";
-    report << "Tool Version: 1.0\n\n";
-    
-    report << "--- Input Parameters ---\n";
-    report << "Input File: " << inputFile << "\n";
-    report << "Output File: " << outputFile << "\n";
-    report << "Obfuscation Level: " << level << "\n";
-    report << "Target Platform: " << platform << "\n";
-    report << "String Encryption: Enabled\n";
-    report << "Bogus Code Injection: Enabled\n";
-    report << "Fake Loop Insertion: Enabled\n";
-    report << "Instruction Substitution: Enabled\n\n";
-    
-    report << "--- Output File Attributes ---\n";
-    report << "File Size (original): " << inputSize << " bytes\n";
-    report << "File Size (obfuscated): " << outputSize << " bytes\n";
-    report << "Size Increase: " << (outputSize - inputSize) << " bytes\n";
-    report << "Methods Applied:\n";
-    report << "  - Control Flow Obfuscation\n";
-    report << "  - Bogus Code Insertion\n";
-    report << "  - Fake Loop Injection\n";
-    report << "  - Instruction Substitution\n\n";
-    
-    report << "--- Obfuscation Statistics ---\n";
-    report << "Bogus Code Blocks: 2-3 per function\n";
-    report << "Fake Loops Inserted: 1 per function\n";
-    report << "Instruction Substitutions: Variable\n";
-    report << "String Obfuscations: Detected strings\n\n";
-    
-    report << "--- Obfuscation Cycles ---\n";
-    report << "Number of Passes: 1\n";
-    report << "LLVM Optimization Level: O0\n\n";
-    
-    report << "========================================\n";
-    report << "Obfuscation completed successfully!\n";
-    report << "========================================\n";
-    
-    report.close();
-    std::cout << "      Generated: " << reportFile << "\n";
-    
-    // Step 5: Summary
-    std::cout << "[5/5] Done!\n\n";
+    // Step 6: Summary
+    std::cout << "[6/6] Done!\n\n";
     std::cout << "========================================\n";
     std::cout << "Obfuscation Complete!\n";
     std::cout << "========================================\n";

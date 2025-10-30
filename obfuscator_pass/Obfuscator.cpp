@@ -8,6 +8,7 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/CommandLine.h"
 #include <random>
 #include <fstream>
 #include <chrono>
@@ -15,6 +16,7 @@
 
 using namespace llvm;
 
+// Command line options for the obfuscator pass
 namespace {
 
 // Statistics tracking structure
@@ -29,8 +31,11 @@ struct ObfuscationStats {
     std::string outputFile;
     std::string timestamp;
     
-    void writeReport(const std::string &filename) {
-        std::ofstream report(filename);
+    void writeReport(const std::string &reportFile) {
+        if (reportFile.empty()) {
+            return;
+        }
+        std::ofstream report(reportFile);
         
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
@@ -74,7 +79,7 @@ struct ObfuscationStats {
         report << "========================================\n";
         
         report.close();
-        errs() << "[Report] Generated: " << filename << "\n";
+        errs() << "[Report] Generated: " << reportFile << "\n";
     }
 };
 
@@ -212,6 +217,13 @@ public:
 };
 
 struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
+    bool BogusBlocks; 
+    bool FakeLoops;
+    bool InstrSub;
+    std::string ReportFile;
+
+    ObfuscatorPass(bool BogusBlocks, bool FakeLoops, bool InstrSub, std::string ReportFile) : BogusBlocks(BogusBlocks), FakeLoops(FakeLoops), InstrSub(InstrSub), ReportFile(ReportFile) {}
+
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
         errs() << "========================================\n";
         errs() << "[ObfuscatorPass] Processing: " << F.getName() << "\n";
@@ -236,31 +248,37 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
             blocks.push_back(&BB);
         }
         
-        // Add bogus blocks (limit to avoid too much bloat)
-        int bogusToAdd = std::min(2, (int)blocks.size());
-        for (int i = 0; i < bogusToAdd && i < blocks.size(); i++) {
-            // CRITICAL FIX: Do not modify blocks that end in a return statement.
-            // This was the source of the infinite loop and crash.
-            if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
-                obf.addBogusBlock(F, blocks[i]);
-                modified = true;
+        if (BogusBlocks) {
+            // Add bogus blocks (limit to avoid too much bloat)
+            int bogusToAdd = std::min(2, (int)blocks.size());
+            for (int i = 0; i < bogusToAdd && i < blocks.size(); i++) {
+                // CRITICAL FIX: Do not modify blocks that end in a return statement.
+                // This was the source of the infinite loop and crash.
+                if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
+                    obf.addBogusBlock(F, blocks[i]);
+                    modified = true;
+                }
             }
         }
         
-        // Add fake loops
-        int loopsToAdd = std::min(1, (int)blocks.size() / 2);
-        for (int i = 0; i < loopsToAdd && i < blocks.size(); i++) {
-            // CRITICAL FIX: Also protect fake loop insertion from breaking return blocks.
-            if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
-                obf.addFakeLoop(F, blocks[i]);
-                modified = true;
+        if (FakeLoops) {
+            // Add fake loops
+            int loopsToAdd = std::min(1, (int)blocks.size() / 2);
+            for (int i = 0; i < loopsToAdd && i < blocks.size(); i++) {
+                // CRITICAL FIX: Also protect fake loop insertion from breaking return blocks.
+                if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
+                    obf.addFakeLoop(F, blocks[i]);
+                    modified = true;
+                }
             }
         }
         
-        // Substitute instructions
-        obf.substituteInstructions(F);
-        if (stats.instructionSubstitutions > 0) {
-            modified = true;
+        if (InstrSub) {
+            // Substitute instructions
+            obf.substituteInstructions(F);
+            if (stats.instructionSubstitutions > 0) {
+                modified = true;
+            }
         }
         
         errs() << "  Bogus Blocks: " << stats.bogusBlocksAdded << "\n";
@@ -268,6 +286,8 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
         errs() << "  Substitutions: " << stats.instructionSubstitutions << "\n";
         errs() << "========================================\n";
         
+        stats.writeReport(ReportFile);
+
         return modified ? PreservedAnalyses::none() : PreservedAnalyses::all();
     }
     
@@ -283,8 +303,37 @@ llvm::PassPluginLibraryInfo getObfuscatorPassPluginInfo() {
             PB.registerPipelineParsingCallback(
                 [](StringRef Name, FunctionPassManager &FPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
-                    if (Name == "obfuscator-pass") {
-                        FPM.addPass(ObfuscatorPass());
+                    if (Name.starts_with("obfuscator-pass")) {
+                        bool bogusBlocks = false;
+                        bool fakeLoops = false;
+                        bool instrSub = false;
+                        std::string reportFile = "";
+
+                        StringRef Options = Name.drop_front(strlen("obfuscator-pass"));
+                        if (Options.starts_with("(")) {
+                            Options = Options.drop_front(1);
+                            Options = Options.drop_back(1);
+                        }
+
+                        SmallVector<StringRef, 4> Opts;
+                        Options.split(Opts, ",");
+
+                        for (auto Opt : Opts) {
+                            if (Opt.starts_with("bogus-blocks=")) {
+                                bogusBlocks = Opt.drop_front(strlen("bogus-blocks=")) == "true";
+                            }
+                            if (Opt.starts_with("fake-loops=")) {
+                                fakeLoops = Opt.drop_front(strlen("fake-loops=")) == "true";
+                            }
+                            if (Opt.starts_with("instr-sub=")) {
+                                instrSub = Opt.drop_front(strlen("instr-sub=")) == "true";
+                            }
+                            if (Opt.starts_with("report-file=")) {
+                                reportFile = Opt.drop_front(strlen("report-file=")).str();
+                            }
+                        }
+
+                        FPM.addPass(ObfuscatorPass(bogusBlocks, fakeLoops, instrSub, reportFile));
                         return true;
                     }
                     return false;
@@ -296,9 +345,4 @@ llvm::PassPluginLibraryInfo getObfuscatorPassPluginInfo() {
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
     return getObfuscatorPassPluginInfo();
-}
-
-// Function to generate report (call after obfuscation)
-extern "C" void generateObfuscationReport(const char *reportFile) {
-    stats.writeReport(reportFile);
 }
