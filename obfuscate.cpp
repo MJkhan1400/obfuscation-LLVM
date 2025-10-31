@@ -157,31 +157,23 @@ int main(int argc, char *argv[]) {
     // Get the directory where this binary is located
     std::string pluginPath = "obfuscator_pass/build/ObfuscatorPass.so";
     
-    std::string passes = "obfuscator-pass(bogus-blocks=" + std::string(enableBogusBlocks ? "true" : "false") + 
-                         ",fake-loops=" + std::string(enableFakeLoops ? "true" : "false") + 
-                         ",instr-sub=" + std::string(enableInstrSub ? "true" : "false") + ")";
-
+        std::string passes = "obfuscator-pass";
+    
+    std::string optFlags = " -bogus-blocks=" + std::string(enableBogusBlocks ? "true" : "false") +
+                           " -fake-loops=" + std::string(enableFakeLoops ? "true" : "false") +
+                           " -instr-sub=" + std::string(enableInstrSub ? "true" : "false");
 
     std::string optLogFile = buildDir + "/opt_output.log";
     cmd = "opt -load-pass-plugin=./" + pluginPath + 
-          " -passes='" + passes + "' " + 
+          " -passes='" + passes + "'" + optFlags + " " + 
           " -report-file=" + reportFile + 
-          " " + bcFile + " -o " + obfBcFile + " > " + optLogFile + " 2>&1";
+          " " + bcFile + " -o " + obfBcFile;
     result = system(cmd.c_str());
-    std::ifstream logStream(optLogFile);
-    if (logStream.is_open()) {
-        std::string line;
-        std::cerr << "--- opt command output ---\n";
-        while (std::getline(logStream, line)) {
-            std::cerr << line << "\n";
-        }
-        std::cerr << "--- End opt command output ---\n";
-        logStream.close();
-        std::remove(optLogFile.c_str()); // Clean up
-    } else {
-        std::cerr << "Warning: Could not open opt log file: " << optLogFile << "\n";
-    }
-    std::cerr << "Debug: opt command return code: " << result << "\n";
+	if (result != 0) {
+    std::cerr << "Error: Obfuscation pass failed\n";
+    std::cerr << "Make sure ObfuscatorPass.so is built\n";
+    return 1;
+}
     if (result != 0) {
         std::cerr << "Error: Obfuscation pass failed\n";
         std::cerr << "Make sure ObfuscatorPass.so is built\n";
