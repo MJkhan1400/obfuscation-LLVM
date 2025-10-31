@@ -1,5 +1,6 @@
 # === C++ / LLVM Project .gitignore ===
-
+main.cpp
+obfuscate
 # --- Build directories ---
 build/
 obfuscator_pass/build/

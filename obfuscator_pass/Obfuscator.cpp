@@ -14,10 +14,14 @@
 #include <chrono>
 #include <ctime>
 
+#include "llvm/Support/CommandLine.h"
+
 using namespace llvm;
 
 // Command line options for the obfuscator pass
 namespace {
+
+static cl::opt<std::string> ReportFileArg("report-file", cl::desc("Path to the obfuscation report file"), cl::init(""));
 
 // Statistics tracking structure
 struct ObfuscationStats {
@@ -36,6 +40,21 @@ struct ObfuscationStats {
             return;
         }
         std::ofstream report(reportFile);
+        if (!report.is_open()) {
+            errs() << "Error: Could not open report file for writing: " << reportFile << "\n";
+            // Attempt to create a temporary file to test write access
+            std::string testFile = reportFile + ".test";
+            std::ofstream testStream(testFile);
+            if (!testStream.is_open()) {
+                errs() << "Error: Could not create temporary test file: " << testFile << "\n";
+            } else {
+                testStream << "Test content\n";
+                testStream.close();
+                errs() << "Successfully created temporary test file: " << testFile << "\n";
+                std::remove(testFile.c_str()); // Clean up
+            }
+            return;
+        }
         
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
@@ -220,9 +239,8 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
     bool BogusBlocks; 
     bool FakeLoops;
     bool InstrSub;
-    std::string ReportFile;
 
-    ObfuscatorPass(bool BogusBlocks, bool FakeLoops, bool InstrSub, std::string ReportFile) : BogusBlocks(BogusBlocks), FakeLoops(FakeLoops), InstrSub(InstrSub), ReportFile(ReportFile) {}
+    ObfuscatorPass(bool BogusBlocks, bool FakeLoops, bool InstrSub) : BogusBlocks(BogusBlocks), FakeLoops(FakeLoops), InstrSub(InstrSub) {}
 
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
         errs() << "========================================\n";
@@ -286,7 +304,7 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
         errs() << "  Substitutions: " << stats.instructionSubstitutions << "\n";
         errs() << "========================================\n";
         
-        stats.writeReport(ReportFile);
+        stats.writeReport(ReportFileArg.getValue());
 
         return modified ? PreservedAnalyses::none() : PreservedAnalyses::all();
     }
@@ -328,12 +346,9 @@ llvm::PassPluginLibraryInfo getObfuscatorPassPluginInfo() {
                             if (Opt.starts_with("instr-sub=")) {
                                 instrSub = Opt.drop_front(strlen("instr-sub=")) == "true";
                             }
-                            if (Opt.starts_with("report-file=")) {
-                                reportFile = Opt.drop_front(strlen("report-file=")).str();
-                            }
                         }
 
-                        FPM.addPass(ObfuscatorPass(bogusBlocks, fakeLoops, instrSub, reportFile));
+                        FPM.addPass(ObfuscatorPass(bogusBlocks, fakeLoops, instrSub));
                         return true;
                     }
                     return false;

@@ -114,7 +114,10 @@ int main(int argc, char *argv[]) {
 
     // Prepend build directory to output paths
     outputFile = buildDir + "/" + outputFile.substr(outputFile.find_last_of('/') + 1);
-    reportFile = buildDir + "/" + reportFile;
+    if (reportFile.rfind(buildDir + "/", 0) != 0) { // Check if reportFile already starts with buildDir/
+        reportFile = buildDir + "/" + reportFile;
+    }
+
 
     // Check if output file exists
     if (!forceOverwrite) {
@@ -145,6 +148,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     std::cout << "      Generated: " << bcFile << "\n";
+
     
     // Step 2: Apply obfuscation pass
     std::cout << "[2/5] Applying obfuscation transformations...\n";
@@ -155,13 +159,29 @@ int main(int argc, char *argv[]) {
     
     std::string passes = "obfuscator-pass(bogus-blocks=" + std::string(enableBogusBlocks ? "true" : "false") + 
                          ",fake-loops=" + std::string(enableFakeLoops ? "true" : "false") + 
-                         ",instr-sub=" + std::string(enableInstrSub ? "true" : "false") + 
-                         ",report-file=" + reportFile + ")";
+                         ",instr-sub=" + std::string(enableInstrSub ? "true" : "false") + ")";
 
+
+    std::string optLogFile = buildDir + "/opt_output.log";
     cmd = "opt -load-pass-plugin=./" + pluginPath + 
           " -passes='" + passes + "' " + 
-          bcFile + " -o " + obfBcFile + " 2>&1";
+          " -report-file=" + reportFile + 
+          " " + bcFile + " -o " + obfBcFile + " > " + optLogFile + " 2>&1";
     result = system(cmd.c_str());
+    std::ifstream logStream(optLogFile);
+    if (logStream.is_open()) {
+        std::string line;
+        std::cerr << "--- opt command output ---\n";
+        while (std::getline(logStream, line)) {
+            std::cerr << line << "\n";
+        }
+        std::cerr << "--- End opt command output ---\n";
+        logStream.close();
+        std::remove(optLogFile.c_str()); // Clean up
+    } else {
+        std::cerr << "Warning: Could not open opt log file: " << optLogFile << "\n";
+    }
+    std::cerr << "Debug: opt command return code: " << result << "\n";
     if (result != 0) {
         std::cerr << "Error: Obfuscation pass failed\n";
         std::cerr << "Make sure ObfuscatorPass.so is built\n";
@@ -221,9 +241,9 @@ int main(int argc, char *argv[]) {
     if (std::remove(bcFile.c_str()) != 0) {
         std::cerr << "      Warning: Could not delete " << bcFile << "\n";
     }
-    if (std::remove(obfBcFile.c_str()) != 0) {
-        std::cerr << "      Warning: Could not delete " << obfBcFile << "\n";
-    }
+    // if (std::remove(obfBcFile.c_str()) != 0) {
+    //     std::cerr << "      Warning: Could not delete " << obfBcFile << "\n";
+    // }
     
     // Step 6: Summary
     std::cout << "[6/6] Done!\n\n";
