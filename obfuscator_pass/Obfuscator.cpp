@@ -14,10 +14,19 @@
 #include <chrono>
 #include <ctime>
 
+#include "llvm/Support/CommandLine.h"
+
 using namespace llvm;
 
 // Command line options for the obfuscator pass
 namespace {
+
+static cl::opt<std::string> ReportFileArg("report-file", cl::desc("Path to the obfuscation report file"), cl::init(""));
+
+// Command line flags to enable/disable obfuscations
+static cl::opt<bool> BogusBlocksOpt("bogus-blocks", cl::desc("Enable bogus block obfuscation"), cl::init(true));
+static cl::opt<bool> FakeLoopsOpt("fake-loops", cl::desc("Enable fake loop obfuscation"), cl::init(true));
+static cl::opt<bool> InstrSubOpt("instr-sub", cl::desc("Enable instruction substitution obfuscation"), cl::init(true));
 
 // Statistics tracking structure
 struct ObfuscationStats {
@@ -27,6 +36,7 @@ struct ObfuscationStats {
     int instructionSubstitutions = 0;
     int totalInstructions = 0;
     int totalBasicBlocks = 0;
+    int functionsObfuscated = 0;
     std::string inputFile;
     std::string outputFile;
     std::string timestamp;
@@ -36,6 +46,21 @@ struct ObfuscationStats {
             return;
         }
         std::ofstream report(reportFile);
+        if (!report.is_open()) {
+            errs() << "Error: Could not open report file for writing: " << reportFile << "\n";
+            // Attempt to create a temporary file to test write access
+            std::string testFile = reportFile + ".test";
+            std::ofstream testStream(testFile);
+            if (!testStream.is_open()) {
+                errs() << "Error: Could not create temporary test file: " << testFile << "\n";
+            } else {
+                testStream << "Test content\n";
+                testStream.close();
+                errs() << "Successfully created temporary test file: " << testFile << "\n";
+                std::remove(testFile.c_str()); // Clean up
+            }
+            return;
+        }
         
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
@@ -74,7 +99,7 @@ struct ObfuscationStats {
         report << "\n";
         report << "--- Obfuscation Cycles ---\n";
         report << "Number of Passes Completed: 1\n";
-        report << "Functions Obfuscated: 1\n";
+        report << "Functions Obfuscated: " << functionsObfuscated << "\n";
         report << "\n";
         report << "========================================\n";
         
@@ -220,18 +245,19 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
     bool BogusBlocks; 
     bool FakeLoops;
     bool InstrSub;
-    std::string ReportFile;
 
-    ObfuscatorPass(bool BogusBlocks, bool FakeLoops, bool InstrSub, std::string ReportFile) : BogusBlocks(BogusBlocks), FakeLoops(FakeLoops), InstrSub(InstrSub), ReportFile(ReportFile) {}
+    ObfuscatorPass(bool BogusBlocks, bool FakeLoops, bool InstrSub) : BogusBlocks(BogusBlocks), FakeLoops(FakeLoops), InstrSub(InstrSub) {}
 
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
-        errs() << "========================================\n";
-        errs() << "[ObfuscatorPass] Processing: " << F.getName() << "\n";
-        
         CodeObfuscator obf;
         bool modified = false;
-        
-        // Count instructions and basic blocks
+
+        // Capture initial stats
+        int bogusBefore = stats.bogusBlocksAdded;
+        int loopsBefore = stats.fakeLoopsAdded;
+        int subsBefore = stats.instructionSubstitutions;
+
+        stats.functionsObfuscated++;
         for (BasicBlock &BB : F) {
             stats.totalBasicBlocks++;
             for (Instruction &I : BB) {
@@ -239,9 +265,11 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
             }
         }
         
-        errs() << "  Instructions: " << stats.totalInstructions << "\n";
-        errs() << "  Basic Blocks: " << stats.totalBasicBlocks << "\n";
-        
+        errs() << "========================================\n";
+        errs() << "[ObfuscatorPass] Processing: " << F.getName() << "\n";
+        errs() << "  Instructions: " << F.getInstructionCount() << "\n";
+        errs() << "  Basic Blocks: " << F.size() << "\n";
+
         // Apply obfuscations
         std::vector<BasicBlock*> blocks;
         for (BasicBlock &BB : F) {
@@ -249,44 +277,51 @@ struct ObfuscatorPass : public PassInfoMixin<ObfuscatorPass> {
         }
         
         if (BogusBlocks) {
-            // Add bogus blocks (limit to avoid too much bloat)
-            int bogusToAdd = std::min(2, (int)blocks.size());
-            for (int i = 0; i < bogusToAdd && i < blocks.size(); i++) {
-                // CRITICAL FIX: Do not modify blocks that end in a return statement.
-                // This was the source of the infinite loop and crash.
-                if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
-                    obf.addBogusBlock(F, blocks[i]);
-                    modified = true;
+            errs() << "  [Bogus Blocks] Enabled\n";
+            int bogusAdded = 0;
+            for (size_t i = 0; i < blocks.size() && bogusAdded < 3; i++) {
+                Instruction *term = blocks[i]->getTerminator();
+                if (term && (isa<ReturnInst>(term) || isa<UnreachableInst>(term))) {
+                    errs() << "    Skipping block " << i << " (terminal block)\n";
+                    continue;
                 }
+                errs() << "    Adding bogus block after block " << i << "\n";
+                obf.addBogusBlock(F, blocks[i]);
+                bogusAdded++;
+                modified = true;
             }
+            errs() << "    Added " << (stats.bogusBlocksAdded - bogusBefore) << " bogus blocks\n";
         }
         
         if (FakeLoops) {
-            // Add fake loops
-            int loopsToAdd = std::min(1, (int)blocks.size() / 2);
-            for (int i = 0; i < loopsToAdd && i < blocks.size(); i++) {
-                // CRITICAL FIX: Also protect fake loop insertion from breaking return blocks.
-                if (!isa<ReturnInst>(blocks[i]->getTerminator())) {
-                    obf.addFakeLoop(F, blocks[i]);
-                    modified = true;
+            errs() << "  [Fake Loops] Enabled\n";
+            int loopsAdded = 0;
+            for (size_t i = 0; i < blocks.size() && loopsAdded < 2; i++) {
+                Instruction *term = blocks[i]->getTerminator();
+                if (term && (isa<ReturnInst>(term) || isa<UnreachableInst>(term))) {
+                    continue;
                 }
+                errs() << "    Adding fake loop after block " << i << "\n";
+                obf.addFakeLoop(F, blocks[i]);
+                loopsAdded++;
+                modified = true;
             }
+            errs() << "    Added " << (stats.fakeLoopsAdded - loopsBefore) << " fake loops\n";
         }
         
         if (InstrSub) {
-            // Substitute instructions
+            errs() << "  [Instruction Substitution] Enabled\n";
             obf.substituteInstructions(F);
-            if (stats.instructionSubstitutions > 0) {
+            if (stats.instructionSubstitutions > subsBefore) {
                 modified = true;
             }
+            errs() << "    Substituted " << (stats.instructionSubstitutions - subsBefore) << " instructions\n";
         }
         
-        errs() << "  Bogus Blocks: " << stats.bogusBlocksAdded << "\n";
-        errs() << "  Fake Loops: " << stats.fakeLoopsAdded << "\n";
-        errs() << "  Substitutions: " << stats.instructionSubstitutions << "\n";
+        
         errs() << "========================================\n";
         
-        stats.writeReport(ReportFile);
+        stats.writeReport(ReportFileArg.getValue());
 
         return modified ? PreservedAnalyses::none() : PreservedAnalyses::all();
     }
@@ -300,44 +335,15 @@ llvm::PassPluginLibraryInfo getObfuscatorPassPluginInfo() {
     return {
         LLVM_PLUGIN_API_VERSION, "ObfuscatorPass", LLVM_VERSION_STRING,
         [](PassBuilder &PB) {
-            PB.registerPipelineParsingCallback(
-                [](StringRef Name, FunctionPassManager &FPM,
-                   ArrayRef<PassBuilder::PipelineElement>) {
-                    if (Name.starts_with("obfuscator-pass")) {
-                        bool bogusBlocks = false;
-                        bool fakeLoops = false;
-                        bool instrSub = false;
-                        std::string reportFile = "";
-
-                        StringRef Options = Name.drop_front(strlen("obfuscator-pass"));
-                        if (Options.starts_with("(")) {
-                            Options = Options.drop_front(1);
-                            Options = Options.drop_back(1);
-                        }
-
-                        SmallVector<StringRef, 4> Opts;
-                        Options.split(Opts, ",");
-
-                        for (auto Opt : Opts) {
-                            if (Opt.starts_with("bogus-blocks=")) {
-                                bogusBlocks = Opt.drop_front(strlen("bogus-blocks=")) == "true";
-                            }
-                            if (Opt.starts_with("fake-loops=")) {
-                                fakeLoops = Opt.drop_front(strlen("fake-loops=")) == "true";
-                            }
-                            if (Opt.starts_with("instr-sub=")) {
-                                instrSub = Opt.drop_front(strlen("instr-sub=")) == "true";
-                            }
-                            if (Opt.starts_with("report-file=")) {
-                                reportFile = Opt.drop_front(strlen("report-file=")).str();
-                            }
-                        }
-
-                        FPM.addPass(ObfuscatorPass(bogusBlocks, fakeLoops, instrSub, reportFile));
-                        return true;
-                    }
-                    return false;
-                });
+					PB.registerPipelineParsingCallback(
+    [](StringRef Name, FunctionPassManager &FPM,
+       ArrayRef<PassBuilder::PipelineElement>) {
+        if (Name == "obfuscator-pass") {
+            FPM.addPass(ObfuscatorPass(BogusBlocksOpt, FakeLoopsOpt, InstrSubOpt));
+            return true;
+        }
+        return false;
+    });
         }
     };
 }

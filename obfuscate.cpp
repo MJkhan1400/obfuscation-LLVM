@@ -51,6 +51,10 @@ int main(int argc, char *argv[]) {
     bool enableFakeLoops = true;
     bool enableInstrSub = true;
     bool forceOverwrite = false;
+
+    bool bogusSet = false;
+    bool loopsSet = false;
+    bool instrSet = false;
     
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -73,15 +77,33 @@ int main(int argc, char *argv[]) {
             emitLL = true;
         } else if (arg == "--no-bogus-blocks") {
             enableBogusBlocks = false;
+            bogusSet = true;
         } else if (arg == "--no-fake-loops") {
             enableFakeLoops = false;
+            loopsSet = true;
         } else if (arg == "--no-instr-sub") {
             enableInstrSub = false;
+            instrSet = true;
         } else if (arg == "-f" || arg == "--force") {
             forceOverwrite = true;
         } else if (arg[0] != '-') {
             inputFile = arg;
         }
+    }
+
+    // Apply level settings for any options not explicitly set by --no-* flags
+    if (level == "low") {
+        if (!bogusSet) enableBogusBlocks = false;
+        if (!loopsSet) enableFakeLoops = false;
+        if (!instrSet) enableInstrSub = true;
+    } else if (level == "high") {
+        if (!bogusSet) enableBogusBlocks = true;
+        if (!loopsSet) enableFakeLoops = true;
+        if (!instrSet) enableInstrSub = true;
+    } else { // medium is the default
+        if (!bogusSet) enableBogusBlocks = true;
+        if (!loopsSet) enableFakeLoops = false;
+        if (!instrSet) enableInstrSub = true;
     }
     
     if (inputFile.empty()) {
@@ -114,7 +136,10 @@ int main(int argc, char *argv[]) {
 
     // Prepend build directory to output paths
     outputFile = buildDir + "/" + outputFile.substr(outputFile.find_last_of('/') + 1);
-    reportFile = buildDir + "/" + reportFile;
+    if (reportFile.rfind(buildDir + "/", 0) != 0) { // Check if reportFile already starts with buildDir/
+        reportFile = buildDir + "/" + reportFile;
+    }
+
 
     // Check if output file exists
     if (!forceOverwrite) {
@@ -145,6 +170,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     std::cout << "      Generated: " << bcFile << "\n";
+
     
     // Step 2: Apply obfuscation pass
     std::cout << "[2/5] Applying obfuscation transformations...\n";
@@ -153,15 +179,23 @@ int main(int argc, char *argv[]) {
     // Get the directory where this binary is located
     std::string pluginPath = "obfuscator_pass/build/ObfuscatorPass.so";
     
-    std::string passes = "obfuscator-pass(bogus-blocks=" + std::string(enableBogusBlocks ? "true" : "false") + 
-                         ",fake-loops=" + std::string(enableFakeLoops ? "true" : "false") + 
-                         ",instr-sub=" + std::string(enableInstrSub ? "true" : "false") + 
-                         ",report-file=" + reportFile + ")";
+        std::string passes = "obfuscator-pass";
+    
+    std::string optFlags = " -bogus-blocks=" + std::string(enableBogusBlocks ? "true" : "false") +
+                           " -fake-loops=" + std::string(enableFakeLoops ? "true" : "false") +
+                           " -instr-sub=" + std::string(enableInstrSub ? "true" : "false");
 
+    std::string optLogFile = buildDir + "/opt_output.log";
     cmd = "opt -load-pass-plugin=./" + pluginPath + 
-          " -passes='" + passes + "' " + 
-          bcFile + " -o " + obfBcFile + " 2>&1";
+          " -passes='" + passes + "'" + optFlags + " " + 
+          " -report-file=" + reportFile + 
+          " " + bcFile + " -o " + obfBcFile;
     result = system(cmd.c_str());
+	if (result != 0) {
+    std::cerr << "Error: Obfuscation pass failed\n";
+    std::cerr << "Make sure ObfuscatorPass.so is built\n";
+    return 1;
+}
     if (result != 0) {
         std::cerr << "Error: Obfuscation pass failed\n";
         std::cerr << "Make sure ObfuscatorPass.so is built\n";
@@ -221,9 +255,9 @@ int main(int argc, char *argv[]) {
     if (std::remove(bcFile.c_str()) != 0) {
         std::cerr << "      Warning: Could not delete " << bcFile << "\n";
     }
-    if (std::remove(obfBcFile.c_str()) != 0) {
-        std::cerr << "      Warning: Could not delete " << obfBcFile << "\n";
-    }
+    // if (std::remove(obfBcFile.c_str()) != 0) {
+    //     std::cerr << "      Warning: Could not delete " << obfBcFile << "\n";
+    // }
     
     // Step 6: Summary
     std::cout << "[6/6] Done!\n\n";
