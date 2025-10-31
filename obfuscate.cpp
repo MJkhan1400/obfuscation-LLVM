@@ -51,6 +51,10 @@ int main(int argc, char *argv[]) {
     bool enableFakeLoops = true;
     bool enableInstrSub = true;
     bool forceOverwrite = false;
+
+    bool bogusSet = false;
+    bool loopsSet = false;
+    bool instrSet = false;
     
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -73,15 +77,33 @@ int main(int argc, char *argv[]) {
             emitLL = true;
         } else if (arg == "--no-bogus-blocks") {
             enableBogusBlocks = false;
+            bogusSet = true;
         } else if (arg == "--no-fake-loops") {
             enableFakeLoops = false;
+            loopsSet = true;
         } else if (arg == "--no-instr-sub") {
             enableInstrSub = false;
+            instrSet = true;
         } else if (arg == "-f" || arg == "--force") {
             forceOverwrite = true;
         } else if (arg[0] != '-') {
             inputFile = arg;
         }
+    }
+
+    // Apply level settings for any options not explicitly set by --no-* flags
+    if (level == "low") {
+        if (!bogusSet) enableBogusBlocks = false;
+        if (!loopsSet) enableFakeLoops = false;
+        if (!instrSet) enableInstrSub = true;
+    } else if (level == "high") {
+        if (!bogusSet) enableBogusBlocks = true;
+        if (!loopsSet) enableFakeLoops = true;
+        if (!instrSet) enableInstrSub = true;
+    } else { // medium is the default
+        if (!bogusSet) enableBogusBlocks = true;
+        if (!loopsSet) enableFakeLoops = false;
+        if (!instrSet) enableInstrSub = true;
     }
     
     if (inputFile.empty()) {
